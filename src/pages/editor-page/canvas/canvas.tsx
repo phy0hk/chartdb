@@ -121,7 +121,7 @@ import { filterTable } from '@/lib/domain/diagram-filter/filter';
 import { defaultSchemas } from '@/lib/data/default-schemas';
 import { useDiff } from '@/context/diff-context/use-diff';
 import { useClickAway } from 'react-use';
-import { useSyncWithServer } from '@/hooks/use-syncwithserver';
+import useSyncWithServer from '@/hooks/use-syncwithserver';
 
 const HIGHLIGHTED_EDGE_Z_INDEX = 1;
 const DEFAULT_EDGE_Z_INDEX = 0;
@@ -320,6 +320,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const { effectiveTheme } = useTheme();
     const { scrollAction, showDBViews, showMiniMapOnCanvas } = useLocalConfig();
     const { isMd: isDesktop } = useBreakpoint('md');
+
     const [highlightOverlappingTables, setHighlightOverlappingTables] =
         useState(false);
     const {
@@ -380,6 +381,8 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 isRelationshipCreatingTarget: false,
             })
         );
+        // setNodes(live_nodes);
+        // console.log(live_nodes);
         const liveNodeMap = new Map(live_nodes.map((n) => [n.id, n]));
 
         setNodes((currentNodes) => {

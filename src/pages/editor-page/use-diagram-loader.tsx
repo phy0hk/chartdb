@@ -41,7 +41,7 @@ export const useDiagramLoader = () => {
                 resetUndoStack();
                 let diagram = await loadDiagram(diagramId);
                 if (!diagram) {
-                    const res = await fetch('/api/v1/diagram/' + diagramId);
+                    const res = await fetch('/api/v1/diagram/id/' + diagramId);
                     const data = await res.json().catch((err) => {
                         console.log(err);
                     });
@@ -49,10 +49,10 @@ export const useDiagramLoader = () => {
                         diagram = diagramFromJSONInputWithoutNewIds(
                             JSON.stringify(data.data)
                         );
-                        await addDiagram({ diagram });
+                        console.log(diagram);
+                        await addDiagram({ diagram: diagram });
                     }
                 }
-
                 if (!diagram) {
                     openOpenDiagramDialog({ canClose: false });
                     hideLoader();
