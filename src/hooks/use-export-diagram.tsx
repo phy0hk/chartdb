@@ -23,6 +23,7 @@ export const useExportDiagram = () => {
                 const json = diagramToJSONOutput(diagram);
                 const blob = new Blob([json], { type: 'application/json' });
                 const dataUrl = URL.createObjectURL(blob);
+                // console.log(json);
                 downloadOutput(diagram.name, dataUrl);
                 setIsLoading(false);
                 closeExportDiagramDialog();

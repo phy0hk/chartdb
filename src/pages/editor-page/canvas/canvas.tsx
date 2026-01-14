@@ -121,6 +121,7 @@ import { filterTable } from '@/lib/domain/diagram-filter/filter';
 import { defaultSchemas } from '@/lib/data/default-schemas';
 import { useDiff } from '@/context/diff-context/use-diff';
 import { useClickAway } from 'react-use';
+import useSyncWithServer from '@/hooks/use-syncwithserver';
 
 const HIGHLIGHTED_EDGE_Z_INDEX = 1;
 const DEFAULT_EDGE_Z_INDEX = 0;
@@ -264,6 +265,19 @@ const noteToNoteNode = (note: Note): NoteNodeType => {
         },
     };
 };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function shallowEqual(a: any, b: any) {
+    if (a === b) return true;
+    if (!a || !b) return false;
+
+    for (const key in a) {
+        if (a[key] !== b[key]) return false;
+    }
+    for (const key in b) {
+        if (!(key in a)) return false;
+    }
+    return true;
+}
 
 export interface CanvasProps {
     initialTables: DBTable[];
@@ -300,10 +314,13 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         highlightedCustomType,
         highlightCustomTypeId,
     } = useChartDB();
+    const { liveDiagramData } = useSyncWithServer();
+
     const { showSidePanel } = useLayout();
     const { effectiveTheme } = useTheme();
     const { scrollAction, showDBViews, showMiniMapOnCanvas } = useLocalConfig();
     const { isMd: isDesktop } = useBreakpoint('md');
+
     const [highlightOverlappingTables, setHighlightOverlappingTables] =
         useState(false);
     const {
@@ -349,6 +366,58 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
             })
         )
     );
+
+    //This will watch the changes and update rerender if it's neccessary
+    useEffect(() => {
+        if (!liveDiagramData) return;
+        if (!liveDiagramData.tables) return;
+        const live_nodes = liveDiagramData.tables.map((table) =>
+            tableToTableNode(table, {
+                filter,
+                databaseType,
+                filterLoading,
+                showDBViews,
+                forceShow: shouldForceShowTable(table.id),
+                isRelationshipCreatingTarget: false,
+            })
+        );
+        // setNodes(live_nodes);
+        // console.log(live_nodes);
+        const liveNodeMap = new Map(live_nodes.map((n) => [n.id, n]));
+
+        setNodes((currentNodes) => {
+            let changed = false;
+
+            const nextNodes = currentNodes.map((node) => {
+                const liveNode = liveNodeMap.get(node.id);
+                if (!liveNode) return node; // node not in live data
+
+                // compare only what matters
+                const same =
+                    node.position.x === liveNode.position.x &&
+                    node.position.y === liveNode.position.y &&
+                    node.width === liveNode.width &&
+                    node.height === liveNode.height &&
+                    shallowEqual(node.data, liveNode.data);
+
+                if (same) return node;
+
+                changed = true;
+                return liveNode;
+            });
+
+            return changed ? nextNodes : currentNodes;
+        });
+    }, [
+        liveDiagramData,
+        databaseType,
+        filter,
+        filterLoading,
+        setNodes,
+        shouldForceShowTable,
+        showDBViews,
+    ]);
+
     const [edges, setEdges, onEdgesChange] =
         useEdgesState<EdgeType>(initialEdges);
 

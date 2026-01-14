@@ -5,6 +5,7 @@ import { useFullScreenLoader } from '@/hooks/use-full-screen-spinner';
 import { useRedoUndoStack } from '@/hooks/use-redo-undo-stack';
 import { useStorage } from '@/hooks/use-storage';
 import type { Diagram } from '@/lib/domain/diagram';
+import { diagramFromJSONInputWithoutNewIds } from '@/lib/export-import-utils';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -17,7 +18,9 @@ export const useDiagramLoader = () => {
     const { showLoader, hideLoader } = useFullScreenLoader();
     const { openCreateDiagramDialog, openOpenDiagramDialog } = useDialog();
     const navigate = useNavigate();
-    const { listDiagrams } = useStorage();
+    const { listDiagrams, addDiagram } = useStorage();
+    //This make the diagram changes
+    // I'll improve the performance
 
     const currentDiagramLoadingRef = useRef<string | undefined>(undefined);
 
@@ -36,7 +39,20 @@ export const useDiagramLoader = () => {
                 showLoader();
                 resetRedoStack();
                 resetUndoStack();
-                const diagram = await loadDiagram(diagramId);
+                let diagram = await loadDiagram(diagramId);
+                if (!diagram) {
+                    const res = await fetch('/api/v1/diagram/id/' + diagramId);
+                    const data = await res.json().catch((err) => {
+                        console.log(err);
+                    });
+                    if (data.data) {
+                        diagram = diagramFromJSONInputWithoutNewIds(
+                            JSON.stringify(data.data)
+                        );
+                        console.log(diagram);
+                        await addDiagram({ diagram: diagram });
+                    }
+                }
                 if (!diagram) {
                     openOpenDiagramDialog({ canClose: false });
                     hideLoader();
@@ -86,6 +102,7 @@ export const useDiagramLoader = () => {
         showLoader,
         currentDiagram?.id,
         openOpenDiagramDialog,
+        addDiagram,
     ]);
 
     return { initialDiagram };

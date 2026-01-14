@@ -21,12 +21,21 @@ const cloneDiagramWithIds = (diagram: Diagram): Diagram => ({
     ...cloneDiagram(diagram).diagram,
     id: generateDiagramId(),
 });
+//custom func
+const cloneDiagramWithoutIds = (diagram: Diagram): Diagram => ({
+    ...cloneDiagram(diagram).diagram,
+    id: diagram.id,
+});
 
 export const diagramToJSONOutput = (diagram: Diagram): string => {
     const clonedDiagram = cloneDiagramWithRunningIds(diagram).diagram;
     return JSON.stringify(clonedDiagram, null, 2);
 };
-
+//custom func
+export const diagramToJSONOutputWs = (diagram: Diagram): string => {
+    const clonedDiagram = cloneDiagramWithRunningIds(diagram).diagram;
+    return JSON.stringify(clonedDiagram, null, 2);
+};
 export const diagramFromJSONInput = (json: string): Diagram => {
     const loadedDiagram = JSON.parse(json);
 
@@ -37,4 +46,25 @@ export const diagramFromJSONInput = (json: string): Diagram => {
     });
 
     return cloneDiagramWithIds(diagram);
+};
+export const diagramFromJSONInputWithoutNewIds = (json: string): Diagram => {
+    const loadedDiagram = JSON.parse(json);
+
+    const diagram = diagramSchema.parse({
+        ...loadedDiagram,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+    });
+
+    return cloneDiagramWithoutIds(diagram);
+};
+
+export const JsonToUnit8Array = (json: string): Uint8Array => {
+    const encoder = new TextEncoder();
+    return encoder.encode(JSON.stringify(json));
+};
+
+export const Unit8ArrayToJson = (array: Uint8Array): string => {
+    const decoder = new TextDecoder();
+    return decoder.decode(array);
 };
