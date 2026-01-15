@@ -142,13 +142,14 @@ const useSyncWithServer = () => {
                         ).getTime();
                         if (payloadTime > localTime) {
                             console.log(payloadTime, localTime);
-                            deleteDiagram(payload.id);
+                            deleteDiagram(payload.id).then(() => {
+                                addDiagram({ diagram: payload });
+                            });
                             setLiveDiagramData(payload);
                             // updateDiagram({
                             //     id: payload.id,
                             //     attributes: payload,
                             // });
-                            addDiagram({ diagram: payload });
                         }
                     } else if (
                         messageJson.type ===
