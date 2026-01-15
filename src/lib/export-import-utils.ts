@@ -59,12 +59,28 @@ export const diagramFromJSONInputWithoutNewIds = (json: string): Diagram => {
     return cloneDiagramWithoutIds(diagram);
 };
 
-export const JsonToUnit8Array = (json: string): Uint8Array => {
+export const JsonToUint8Array = (json: object): Uint8Array => {
     const encoder = new TextEncoder();
     return encoder.encode(JSON.stringify(json));
 };
 
-export const Unit8ArrayToJson = (array: Uint8Array): string => {
-    const decoder = new TextDecoder();
-    return decoder.decode(array);
+export const Uint8ArrayToJson = <T>(array: Uint8Array): T | undefined => {
+    try {
+        const decoder = new TextDecoder();
+        return JSON.parse(decoder.decode(array)) as T;
+    } catch (err) {
+        console.error(err);
+        return;
+    }
+};
+export const SendMessage = (
+    message: object,
+    ws: WebSocket | undefined | null
+) => {
+    // Critical Check: readyState 1 is "OPEN"
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JsonToUint8Array(message));
+    } else {
+        console.warn('WebSocket not ready. Message queued or dropped.');
+    }
 };

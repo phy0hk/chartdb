@@ -4,20 +4,78 @@ import { useChartDB } from './use-chartdb';
 import { useParams } from 'react-router-dom';
 import {
     diagramToJSONOutputWs,
-    JsonToUnit8Array,
+    JsonToUint8Array,
+    SendMessage,
+    Uint8ArrayToJson,
 } from '@/lib/export-import-utils';
 import type { Diagram } from '@/lib/domain';
 import { useStorage } from './use-storage';
+import { useLocation } from 'react-use';
+import type { EdgeChange, NodeChange } from '@xyflow/react';
+import type { EdgeType, NodeType } from '@/pages/editor-page/canvas/canvas';
 
+export type WebSocketMessageType =
+    | {
+          type: WebSocketMessageReqType.DIAGRAM_CHANGES;
+          diagramId: string;
+          payload: Diagram | undefined;
+      }
+    | {
+          type: WebSocketMessageReqType.NODE_UPDATE;
+          changes: string;
+      }
+    | {
+          type: WebSocketMessageReqType.EDGE_UPDATE;
+          userId: string;
+          changes: string;
+      }
+    | {
+          type: WebSocketMessageReqType.CURSOR_MOVE;
+          userId: string;
+          position: { x: number; y: number };
+      }
+    | {
+          type: WebSocketMessageReqType.DIAGRAM_BROADCAST;
+          payload: Diagram;
+      }
+    | {
+          type: WebSocketMessageReqType.DIAGRAM_NOT_EXIST;
+      }
+    | {
+          type: WebSocketMessageReqType.DIAGRAM_CREATE;
+      };
+
+export enum WebSocketMessageReqType {
+    DIAGRAM_CHANGES = 'DIAGRAM_CHANGES',
+    WELCOME = 'WELCOME',
+    EDGE_UPDATE = 'EDGE_UPDATE',
+    NODE_UPDATE = 'NODE_UPDATE',
+    CURSOR_MOVE = 'CURSOR_MOVE',
+    DIAGRAM_BROADCAST = 'DIAGRAM_BROADCAST',
+    GREET = 'GREET',
+    DIAGRAM_NOT_EXIST = 'DIAGRAM_NOT_EXIST',
+    DIAGRAM_CREATE = 'DIAGRAM_CREATE',
+}
 const useSyncWithServer = () => {
     const { diagramId } = useParams<{ diagramId: string }>();
     const { loadDiagram } = useChartDB();
-    const [wsc, setWSC] = useState<WebSocket | null>(null);
+    // const [wsc, setWSC] = useState<WebSocket | null>(null);
     const { deleteDiagram, addDiagram } = useStorage();
-    const ws_url = 'wss://chartdb-backend.onrender.com';
+    const [LiveNodeChanges, setLiveNodeChanges] = useState<
+        NodeChange<NodeType>[]
+    >([]);
+    const wsc = useRef<WebSocket>();
+    const [LiveEdgeChanges, setLiveEdgeChanges] = useState<
+        EdgeChange<EdgeType> | undefined
+    >();
+    const location = useLocation();
+    const ws_url = `${location?.protocol === 'https' ? 'wss' : 'ws'}://${location.hostname}${location.port ? ':' + location.port : ''}`;
+    // const ws_url = 'wss://chartdb-backend.onrender.com';
+    // const [sync, setSync] = useState<boolean>(false);
     // const ws_url = 'ws://localhost:8080';
     // Track if the socket is actually ready to receive data
     const [isReady, setIsReady] = useState(false);
+    const [DiagramNotExist, setDiagramNotExist] = useState(false);
     const [liveDiagramData, setLiveDiagramData] = useState<Diagram | undefined>(
         undefined
     );
@@ -26,6 +84,13 @@ const useSyncWithServer = () => {
         if (!diagramId) return undefined;
         return loadDiagram(diagramId);
     }, [diagramId]);
+
+    const ClearLiveNodeChanges = () => {
+        setLiveNodeChanges([]);
+    };
+    const ClearLiveEdgeChanges = () => {
+        setLiveEdgeChanges(undefined);
+    };
 
     useEffect(() => {
         const socket = new WebSocket(ws_url);
@@ -37,74 +102,154 @@ const useSyncWithServer = () => {
         const onClose = () => {
             setIsReady(false);
             // Optional: Add a delay before reconnecting to avoid infinite loops
-            setTimeout(() => setWSC(new WebSocket(ws_url)), 3000);
+            setTimeout(() => (wsc.current = new WebSocket(ws_url)), 3000);
         };
-        const onMessage = (event: MessageEvent) => {
-            const messageJson = JSON.parse(event.data) as {
-                type: string;
-                payload: Diagram;
-            };
-            if (messageJson.type === 'DIAGRAM_BROADCAST') {
-                const payload = messageJson.payload;
-                if (!currentDiagramData.current) return;
-
-                const payloadTime = new Date(payload.updatedAt).getTime();
-                const localTime = new Date(
-                    currentDiagramData.current.updatedAt
-                ).getTime();
-                if (payloadTime > localTime) {
-                    console.log(payloadTime, localTime);
-                    deleteDiagram(payload.id);
-
-                    setLiveDiagramData(payload);
-                    // updateDiagram({ id: payload.id, attributes: payload });
-                    addDiagram({ diagram: payload });
+        const onMessage = async (event: MessageEvent) => {
+            try {
+                if (event.data instanceof Blob) {
+                    const arrayBufferData = await event.data.arrayBuffer();
+                    const unit8Data = new Uint8Array(arrayBufferData);
+                    // console.log(Unit8ArrayToJson());
+                    const messageJson =
+                        Uint8ArrayToJson<WebSocketMessageType>(unit8Data);
+                    if (!messageJson) return;
+                    if (
+                        messageJson.type === WebSocketMessageReqType.NODE_UPDATE
+                    ) {
+                        const changes = JSON.parse(
+                            messageJson.changes
+                        ) as NodeChange<NodeType>[];
+                        setLiveNodeChanges(changes);
+                    } else if (
+                        messageJson.type === WebSocketMessageReqType.EDGE_UPDATE
+                    ) {
+                        const changes = JSON.parse(
+                            messageJson.changes
+                        ) as EdgeChange<EdgeType>;
+                        setLiveEdgeChanges(changes);
+                    } else if (
+                        messageJson.type ===
+                        WebSocketMessageReqType.DIAGRAM_BROADCAST
+                    ) {
+                        const payload = messageJson.payload;
+                        if (!payload) return;
+                        if (!currentDiagramData.current) return;
+                        const payloadTime = new Date(
+                            payload.updatedAt
+                        ).getTime();
+                        const localTime = new Date(
+                            currentDiagramData.current.updatedAt
+                        ).getTime();
+                        if (payloadTime > localTime) {
+                            console.log(payloadTime, localTime);
+                            deleteDiagram(payload.id);
+                            setLiveDiagramData(payload);
+                            // updateDiagram({
+                            //     id: payload.id,
+                            //     attributes: payload,
+                            // });
+                            addDiagram({ diagram: payload });
+                        }
+                    } else if (
+                        messageJson.type ===
+                        WebSocketMessageReqType.DIAGRAM_NOT_EXIST
+                    ) {
+                        setDiagramNotExist(true);
+                    }
                 }
+            } catch (err) {
+                console.log(err);
             }
         };
-
         const onError = (err: Event) => console.error('WebSocket Error:', err);
 
         socket.addEventListener('open', onOpen);
         socket.addEventListener('close', onClose);
         socket.addEventListener('error', onError);
         socket.addEventListener('message', onMessage);
-        setWSC(socket);
+        wsc.current = socket;
 
         // Cleanup: Important to prevent memory leaks and duplicate listeners
         return () => {
             socket.removeEventListener('open', onOpen);
             socket.removeEventListener('close', onClose);
             socket.removeEventListener('error', onError);
-            socket.addEventListener('message', onMessage);
+            socket.removeEventListener('message', onMessage);
             socket.close();
         };
-    }, [addDiagram, deleteDiagram]);
+    }, [addDiagram, deleteDiagram, ws_url, liveDiagramData]);
 
     // 2. Sync Logic
-    useEffect(() => {
-        const sendMessage = (message: string) => {
-            // Critical Check: readyState 1 is "OPEN"
-            if (wsc && wsc.readyState === WebSocket.OPEN) {
-                wsc.send(JsonToUnit8Array(message));
-            } else {
-                console.warn('WebSocket not ready. Message queued or dropped.');
-            }
-        };
-        if (!localDiagramData || !isReady || !diagramId) return;
-        currentDiagramData.current = localDiagramData;
-        const jsonDataString = diagramToJSONOutputWs(localDiagramData);
-        const json = JSON.parse(jsonDataString) as Diagram;
-        const newJson: Diagram = { ...json, id: diagramId };
-        sendMessage(
-            JSON.stringify({
-                type: 'DIAGRAM_CHANGES',
-                id: diagramId,
-                payload: newJson,
-            })
-        );
-    }, [localDiagramData, isReady, diagramId, wsc]); // Only sync when both data AND socket are ready
+    useEffect(
+        () => {
+            if (!localDiagramData || !isReady || !diagramId) return;
+            currentDiagramData.current = localDiagramData;
+            const jsonDataString = diagramToJSONOutputWs(localDiagramData);
+            const json = JSON.parse(jsonDataString) as Diagram;
+            const newJson: Diagram = { ...json, id: diagramId };
+            SendMessage(
+                {
+                    type: WebSocketMessageReqType.DIAGRAM_CHANGES,
+                    id: diagramId,
+                    payload: newJson,
+                },
+                wsc.current
+            );
+        },
+        // else if (DiagramNotExist) {
+        //     SendMessage(
+        //         {
+        //             type: WebSocketMessageReqType.DIAGRAM_CREATE,
+        //             payload: newJson,
+        //         },
+        //         wsc.current
+        //     );
+        // } else {
+        //     SendMessage(
+        //         {
+        //             type: WebSocketMessageReqType.GREET,
+        //             diagramId,
+        //         },
+        //         wsc.current
+        //     );
+        // }
+        [localDiagramData, isReady, diagramId, wsc, DiagramNotExist]
+    ); // Only sync when both data AND socket are ready
 
-    return { liveDiagramData };
+    const onNodeChangeSync = (changes: NodeChange<NodeType>[]) => {
+        if (!wsc.current) return;
+        const changesNodes = JSON.stringify(changes);
+        // console.log(changesNodes);
+        const nodeChangeEvent = {
+            type: WebSocketMessageReqType.NODE_UPDATE,
+            changes: changesNodes,
+        };
+        const nodeChangeEventByteData = JsonToUint8Array(nodeChangeEvent);
+        if (wsc.current?.readyState === WebSocket.OPEN) {
+            wsc.current.send(nodeChangeEventByteData);
+        }
+    };
+    const onEdgeChangeSync = (changes: EdgeChange<EdgeType>[]) => {
+        if (!wsc.current) return;
+        const changesEdges = JSON.stringify(changes);
+        const edgeChangeEvent = {
+            type: WebSocketMessageReqType.EDGE_UPDATE,
+            changes: changesEdges,
+        };
+        const edgeChangeEventByteData = JsonToUint8Array(edgeChangeEvent);
+        if (wsc.current?.readyState === WebSocket.OPEN) {
+            wsc.current.send(edgeChangeEventByteData);
+        }
+    };
+
+    return {
+        liveDiagramData,
+        onNodeChangeSync,
+        onEdgeChangeSync,
+        LiveNodeChanges,
+        LiveEdgeChanges,
+        ClearLiveNodeChanges,
+        ClearLiveEdgeChanges,
+    };
 };
 export default useSyncWithServer;
