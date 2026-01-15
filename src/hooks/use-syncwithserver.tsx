@@ -10,7 +10,7 @@ import {
 } from '@/lib/export-import-utils';
 import type { Diagram } from '@/lib/domain';
 import { useStorage } from './use-storage';
-import { useLocation } from 'react-use';
+// import { useLocation } from 'react-use';
 import type { EdgeChange, NodeChange } from '@xyflow/react';
 import type { EdgeType, NodeType } from '@/pages/editor-page/canvas/canvas';
 
@@ -68,9 +68,9 @@ const useSyncWithServer = () => {
     const [LiveEdgeChanges, setLiveEdgeChanges] = useState<
         EdgeChange<EdgeType> | undefined
     >();
-    const location = useLocation();
-    const ws_url = `${location?.protocol === 'https' ? 'wss' : 'ws'}://${location.hostname}${location.port ? ':' + location.port : ''}`;
-    // const ws_url = 'wss://chartdb-backend.onrender.com';
+    // const location = useLocation();
+    // const ws_url = `${location?.protocol === 'https' ? 'wss' : 'ws'}://${location.hostname}${location.port ? ':' + location.port : ''}`;
+    const ws_url = 'wss://chartdb-backend.onrender.com';
     // const [sync, setSync] = useState<boolean>(false);
     // const ws_url = 'ws://localhost:8080';
     // Track if the socket is actually ready to receive data
