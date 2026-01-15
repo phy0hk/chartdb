@@ -14,7 +14,8 @@ const useSyncWithServer = () => {
     const { loadDiagram } = useChartDB();
     const [wsc, setWSC] = useState<WebSocket | null>(null);
     const { deleteDiagram, addDiagram } = useStorage();
-    const ws_url = 'ws://localhost:8080';
+    const ws_url = 'ws://chartdb-backend.onrender.com';
+    // const ws_url = 'ws://localhost:8080';
     // Track if the socket is actually ready to receive data
     const [isReady, setIsReady] = useState(false);
     const [liveDiagramData, setLiveDiagramData] = useState<Diagram | undefined>(
