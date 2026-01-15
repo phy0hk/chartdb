@@ -1043,7 +1043,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         },
         [getNode]
     );
-
     const onNodesChangeHandler: OnNodesChange<NodeType> = useCallback(
         (changes) => {
             let changesToApply = changes;
