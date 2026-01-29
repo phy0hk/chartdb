@@ -21,6 +21,7 @@
         "@dbml/parse": "^5.3.0",
         "@dnd-kit/sortable": "^8.0.0",
         "@dnd-kit/utilities": "^3.2.2",
+        "@hocuspocus/provider": "^3.4.3",
         "@monaco-editor/react": "^4.7.0",
         "@radix-ui/react-accordion": "^1.2.0",
         "@radix-ui/react-alert-dialog": "^1.1.1",

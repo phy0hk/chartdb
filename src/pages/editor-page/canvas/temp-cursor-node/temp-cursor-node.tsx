@@ -19,7 +19,7 @@ export const TempCursorNode: React.FC<NodeProps<TempCursorNodeType>> =
                 style={{
                     width: 1,
                     height: 1,
-                    opacity: 0,
+                    opacity: 100,
                     pointerEvents: 'none',
                 }}
             >

@@ -122,6 +122,8 @@ import { defaultSchemas } from '@/lib/data/default-schemas';
 import { useDiff } from '@/context/diff-context/use-diff';
 import { useClickAway } from 'react-use';
 import useSyncWithServer from '@/hooks/use-syncwithserver';
+import { useCursorPos } from '@/hooks/use-cursor-pos';
+import { CursorNode, type CursorNodeType } from './cursor-node/cursor-node';
 
 const HIGHLIGHTED_EDGE_Z_INDEX = 1;
 const DEFAULT_EDGE_Z_INDEX = 0;
@@ -136,7 +138,8 @@ export type NodeType =
     | AreaNodeType
     | NoteNodeType
     | TempCursorNodeType
-    | CreateRelationshipNodeType;
+    | CreateRelationshipNodeType
+    | CursorNodeType;
 
 type AddEdgeParams = Parameters<typeof addEdge<EdgeType>>[0];
 
@@ -152,6 +155,7 @@ const nodeTypes: NodeTypes = {
     note: NoteNode,
     'temp-cursor': TempCursorNode,
     'create-relationship': CreateRelationshipNode,
+    cursor: CursorNode,
 };
 
 const initialEdges: EdgeType[] = [];
@@ -265,19 +269,6 @@ const noteToNoteNode = (note: Note): NoteNodeType => {
         },
     };
 };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function shallowEqual(a: any, b: any) {
-    if (a === b) return true;
-    if (!a || !b) return false;
-
-    for (const key in a) {
-        if (a[key] !== b[key]) return false;
-    }
-    for (const key in b) {
-        if (!(key in a)) return false;
-    }
-    return true;
-}
 
 export interface CanvasProps {
     initialTables: DBTable[];
@@ -314,8 +305,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         highlightedCustomType,
         highlightCustomTypeId,
     } = useChartDB();
-    const { liveDiagramData } = useSyncWithServer();
-
+    useSyncWithServer();
     const { showSidePanel } = useLayout();
     const { effectiveTheme } = useTheme();
     const { scrollAction, showDBViews, showMiniMapOnCanvas } = useLocalConfig();
@@ -354,8 +344,17 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
 
     const [isInitialLoadingNodes, setIsInitialLoadingNodes] = useState(true);
 
-    const [nodes, setNodes, onNodesChange] = useNodesState<NodeType>(
-        initialTables.map((table) =>
+    const { onMouseMove, CursorPos } = useCursorPos();
+    const cursorNode: CursorNodeType = {
+        id: 'cursor-0',
+        type: 'cursor',
+        position: { x: 0, y: 0 },
+        data: {},
+        draggable: false,
+        selectable: false,
+    };
+    const [nodes, setNodes, onNodesChange] = useNodesState<NodeType>([
+        ...initialTables.map((table) =>
             tableToTableNode(table, {
                 filter,
                 databaseType,
@@ -364,58 +363,8 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 forceShow: shouldForceShowTable(table.id),
                 isRelationshipCreatingTarget: false,
             })
-        )
-    );
-
-    //This will watch the changes and update rerender if it's neccessary
-    useEffect(() => {
-        if (!liveDiagramData) return;
-        if (!liveDiagramData.tables) return;
-        const live_nodes = liveDiagramData.tables.map((table) =>
-            tableToTableNode(table, {
-                filter,
-                databaseType,
-                filterLoading,
-                showDBViews,
-                forceShow: shouldForceShowTable(table.id),
-                isRelationshipCreatingTarget: false,
-            })
-        );
-        // setNodes(live_nodes);
-        // console.log(live_nodes);
-        const liveNodeMap = new Map(live_nodes.map((n) => [n.id, n]));
-
-        setNodes((currentNodes) => {
-            let changed = false;
-
-            const nextNodes = currentNodes.map((node) => {
-                const liveNode = liveNodeMap.get(node.id);
-                if (!liveNode) return node; // node not in live data
-
-                // compare only what matters
-                const same =
-                    node.position.x === liveNode.position.x &&
-                    node.position.y === liveNode.position.y &&
-                    node.width === liveNode.width &&
-                    node.height === liveNode.height &&
-                    shallowEqual(node.data, liveNode.data);
-
-                if (same) return node;
-
-                changed = true;
-                return liveNode;
-            });
-
-            return changed ? nextNodes : currentNodes;
-        });
-    }, [
-        liveDiagramData,
-        databaseType,
-        filter,
-        filterLoading,
-        setNodes,
-        shouldForceShowTable,
-        showDBViews,
+        ),
+        cursorNode,
     ]);
 
     const [edges, setEdges, onEdgesChange] =
@@ -669,7 +618,8 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 ...prevNodes.filter(
                     (n) =>
                         n.type === 'temp-cursor' ||
-                        n.type === 'create-relationship'
+                        n.type === 'create-relationship' ||
+                        n.type === 'cursor'
                 ),
             ];
 
@@ -695,7 +645,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         showDBViews,
         shouldForceShowTable,
     ]);
-
     // Surgical update for relationship creation target highlighting
     // This avoids expensive full node recalculation when only the visual state changes
     useEffect(() => {
@@ -878,7 +827,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const onEdgesChangeHandler: OnEdgesChange<EdgeType> = useCallback(
         (changes) => {
             let changesToApply = changes;
-
             if (readonly) {
                 changesToApply = changesToApply.filter(
                     (change) => change.type !== 'remove'
@@ -1047,7 +995,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const onNodesChangeHandler: OnNodesChange<NodeType> = useCallback(
         (changes) => {
             let changesToApply = changes;
-
+            // if (sync) return;
             if (readonly) {
                 changesToApply = changesToApply.filter(
                     (change) => change.type !== 'remove'
@@ -1354,6 +1302,20 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         ]
     );
 
+    useEffect(() => {
+        const currentCursorNode = nodes.filter(
+            (item) =>
+                item.id === cursorNode.id &&
+                item.position !== CursorPos &&
+                item.type === 'cursor'
+        );
+        if (currentCursorNode.length > 0) {
+            onNodesChangeHandler([
+                { id: cursorNode.id, type: 'position', position: CursorPos },
+            ]);
+        }
+    }, [CursorPos, onNodesChangeHandler, cursorNode.id, nodes]);
+
     const eventConsumer = useCallback(
         (event: ChartDBEvent) => {
             let newOverlappingGraph: Graph<string> = overlapGraph;
@@ -1545,6 +1507,12 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const rafIdRef = useRef<number>();
     const handleMouseMove = useCallback(
         (event: React.MouseEvent) => {
+            //This is for mousepos syncing
+            const mousePos = screenToFlowPosition({
+                x: event.clientX,
+                y: event.clientY,
+            });
+            onMouseMove(mousePos);
             if (tempFloatingEdge) {
                 // Throttle using requestAnimationFrame
                 if (rafIdRef.current) {
@@ -1561,7 +1529,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 });
             }
         },
-        [tempFloatingEdge, screenToFlowPosition]
+        [tempFloatingEdge, screenToFlowPosition, onMouseMove]
     );
 
     // Cleanup RAF on unmount
@@ -1604,7 +1572,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         if (!tempFloatingEdge || !cursorPosition) {
             return nodes;
         }
-
         const tempNode: TempCursorNodeType = {
             id: TEMP_CURSOR_NODE_ID,
             type: 'temp-cursor',
@@ -1613,7 +1580,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
             draggable: false,
             selectable: false,
         };
-
         return [...nodes, tempNode];
     }, [nodes, tempFloatingEdge, cursorPosition]);
 
@@ -1856,6 +1822,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                             </Button>
                         </Controls>
                     ) : null}
+
                     {isLostInCanvas ? (
                         <Controls
                             position={
