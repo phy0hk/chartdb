@@ -31,7 +31,6 @@ export const CanvasContextMenu: React.FC<React.PropsWithChildren> = ({
     const { setEditTableModeTable } = useCanvas();
 
     const { isMd: isDesktop } = useBreakpoint('md');
-
     const createTableHandler = useCallback(
         async (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
             const position = screenToFlowPosition({

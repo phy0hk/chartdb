@@ -122,6 +122,8 @@ import { defaultSchemas } from '@/lib/data/default-schemas';
 import { useDiff } from '@/context/diff-context/use-diff';
 import { useClickAway } from 'react-use';
 import useSyncWithServer from '@/hooks/use-syncwithserver';
+import { useCursorPos } from '@/hooks/use-cursor-pos';
+import { CursorNode, type CursorNodeType } from './cursor-node/cursor-node';
 
 const HIGHLIGHTED_EDGE_Z_INDEX = 1;
 const DEFAULT_EDGE_Z_INDEX = 0;
@@ -136,7 +138,8 @@ export type NodeType =
     | AreaNodeType
     | NoteNodeType
     | TempCursorNodeType
-    | CreateRelationshipNodeType;
+    | CreateRelationshipNodeType
+    | CursorNodeType;
 
 type AddEdgeParams = Parameters<typeof addEdge<EdgeType>>[0];
 
@@ -152,6 +155,7 @@ const nodeTypes: NodeTypes = {
     note: NoteNode,
     'temp-cursor': TempCursorNode,
     'create-relationship': CreateRelationshipNode,
+    cursor: CursorNode,
 };
 
 const initialEdges: EdgeType[] = [];
@@ -301,12 +305,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         highlightedCustomType,
         highlightCustomTypeId,
     } = useChartDB();
-    const {
-        onNodeChangeSync,
-        onEdgeChangeSync,
-        LiveNodeChanges,
-        ClearLiveNodeChanges,
-    } = useSyncWithServer();
+    useSyncWithServer();
     const { showSidePanel } = useLayout();
     const { effectiveTheme } = useTheme();
     const { scrollAction, showDBViews, showMiniMapOnCanvas } = useLocalConfig();
@@ -345,8 +344,17 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
 
     const [isInitialLoadingNodes, setIsInitialLoadingNodes] = useState(true);
 
-    const [nodes, setNodes, onNodesChange] = useNodesState<NodeType>(
-        initialTables.map((table) =>
+    const { onMouseMove, CursorPos } = useCursorPos();
+    const cursorNode: CursorNodeType = {
+        id: 'cursor-0',
+        type: 'cursor',
+        position: { x: 0, y: 0 },
+        data: {},
+        draggable: false,
+        selectable: false,
+    };
+    const [nodes, setNodes, onNodesChange] = useNodesState<NodeType>([
+        ...initialTables.map((table) =>
             tableToTableNode(table, {
                 filter,
                 databaseType,
@@ -355,8 +363,9 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 forceShow: shouldForceShowTable(table.id),
                 isRelationshipCreatingTarget: false,
             })
-        )
-    );
+        ),
+        cursorNode,
+    ]);
 
     const [edges, setEdges, onEdgesChange] =
         useEdgesState<EdgeType>(initialEdges);
@@ -371,13 +380,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     useEffect(() => {
         setIsInitialLoadingNodes(true);
     }, [initialTables]);
-
-    //Watch the edges changes
-    // useEffect(() => {
-    //     console.log(edges);
-    // }, [edges]);
-    //Watch the nodes changes
-    // useEffect(() => {}, [nodes]);
 
     useEffect(() => {
         const initialNodes = initialTables.map((table) =>
@@ -616,7 +618,8 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 ...prevNodes.filter(
                     (n) =>
                         n.type === 'temp-cursor' ||
-                        n.type === 'create-relationship'
+                        n.type === 'create-relationship' ||
+                        n.type === 'cursor'
                 ),
             ];
 
@@ -642,7 +645,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         showDBViews,
         shouldForceShowTable,
     ]);
-
     // Surgical update for relationship creation target highlighting
     // This avoids expensive full node recalculation when only the visual state changes
     useEffect(() => {
@@ -825,7 +827,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const onEdgesChangeHandler: OnEdgesChange<EdgeType> = useCallback(
         (changes) => {
             let changesToApply = changes;
-            onEdgeChangeSync(changesToApply);
             if (readonly) {
                 changesToApply = changesToApply.filter(
                     (change) => change.type !== 'remove'
@@ -868,7 +869,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
             removeRelationships,
             removeDependencies,
             readonly,
-            onEdgeChangeSync,
         ]
     );
 
@@ -995,7 +995,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const onNodesChangeHandler: OnNodesChange<NodeType> = useCallback(
         (changes) => {
             let changesToApply = changes;
-            onNodeChangeSync(changesToApply);
+            // if (sync) return;
             if (readonly) {
                 changesToApply = changesToApply.filter(
                     (change) => change.type !== 'remove'
@@ -1299,328 +1299,22 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
             tables,
             areas,
             getNode,
-            onNodeChangeSync,
         ]
     );
 
-    const onNodesChangeHandlerLive: OnNodesChange<NodeType> = useCallback(
-        (changes) => {
-            let changesToApply = changes;
-            if (readonly) {
-                changesToApply = changesToApply.filter(
-                    (change) => change.type !== 'remove'
-                );
-            }
-
-            // Handle area drag changes - add child table movements for visual feedback only
-            const areaDragChanges = changesToApply.filter((change) => {
-                if (change.type === 'position') {
-                    const node = getNode(change.id);
-                    return node?.type === 'area' && change.dragging;
-                }
-                return false;
-            }) as NodePositionChange[];
-
-            // Add visual position changes for child tables during area dragging
-            if (areaDragChanges.length > 0) {
-                const additionalChanges: NodePositionChange[] = [];
-
-                areaDragChanges.forEach((areaChange) => {
-                    const currentArea = areas.find(
-                        (a) => a.id === areaChange.id
-                    );
-                    if (currentArea && areaChange.position) {
-                        const deltaX = areaChange.position.x - currentArea.x;
-                        const deltaY = areaChange.position.y - currentArea.y;
-
-                        // Find child tables and create visual position changes
-                        const childTables = tables.filter(
-                            (table) => table.parentAreaId === areaChange.id
-                        );
-
-                        childTables.forEach((table) => {
-                            additionalChanges.push({
-                                id: table.id,
-                                type: 'position',
-                                position: {
-                                    x: table.x + deltaX,
-                                    y: table.y + deltaY,
-                                },
-                                dragging: true,
-                            });
-                        });
-                    }
-                });
-
-                // Add visual changes to React Flow
-                changesToApply = [...changesToApply, ...additionalChanges];
-            }
-
-            // First, detect area changes
-            const {
-                positionChanges: areaPositionChanges,
-                removeChanges: areaRemoveChanges,
-                sizeChanges: areaSizeChanges,
-            } = findRelevantNodesChanges(changesToApply, 'area');
-
-            // Then, detect note changes
-            const {
-                positionChanges: notePositionChanges,
-                removeChanges: noteRemoveChanges,
-                sizeChanges: noteSizeChanges,
-            } = findRelevantNodesChanges(changesToApply, 'note');
-
-            // Then, detect table changes
-            const { positionChanges, removeChanges, sizeChanges } =
-                findRelevantNodesChanges(changesToApply, 'table');
-
-            // Calculate child table movements from area position changes
-            const childTableMovements: Map<
-                string,
-                { deltaX: number; deltaY: number }
-            > = new Map();
-            if (
-                areaPositionChanges.length > 0 &&
-                areaSizeChanges.length === 0
-            ) {
-                areaPositionChanges.forEach((change) => {
-                    if (change.type === 'position' && change.position) {
-                        const currentArea = areas.find(
-                            (a) => a.id === change.id
-                        );
-                        if (currentArea) {
-                            const deltaX = change.position.x - currentArea.x;
-                            const deltaY = change.position.y - currentArea.y;
-
-                            const childTables = getTablesInArea(
-                                change.id,
-                                tables
-                            );
-                            childTables.forEach((table) => {
-                                childTableMovements.set(table.id, {
-                                    deltaX,
-                                    deltaY,
-                                });
-                            });
-                        }
-                    }
-                });
-            }
-
-            // Apply all table updates in a single call
-            if (
-                positionChanges.length > 0 ||
-                removeChanges.length > 0 ||
-                sizeChanges.length > 0 ||
-                childTableMovements.size > 0 ||
-                areaRemoveChanges.length > 0
-            ) {
-                updateTablesState(
-                    (currentTables) => {
-                        const updatedTables = currentTables
-                            .map((currentTable) => {
-                                // Handle area removal - clear parentAreaId
-                                const removedArea = areaRemoveChanges.find(
-                                    (change) =>
-                                        change.id === currentTable.parentAreaId
-                                );
-                                if (removedArea) {
-                                    return {
-                                        ...currentTable,
-                                        parentAreaId: null,
-                                    };
-                                }
-
-                                // Handle direct table changes
-                                const positionChange = positionChanges.find(
-                                    (change) => change.id === currentTable.id
-                                );
-                                const sizeChange = sizeChanges.find(
-                                    (change) => change.id === currentTable.id
-                                );
-
-                                // Handle child table movement from area drag
-                                const areaMovement = childTableMovements.get(
-                                    currentTable.id
-                                );
-
-                                if (
-                                    positionChange ||
-                                    sizeChange ||
-                                    areaMovement
-                                ) {
-                                    const x = positionChange?.position?.x;
-                                    const y = positionChange?.position?.y;
-
-                                    return {
-                                        ...currentTable,
-                                        ...(positionChange &&
-                                        x !== undefined &&
-                                        y !== undefined &&
-                                        !isNaN(x) &&
-                                        !isNaN(y)
-                                            ? {
-                                                  x,
-                                                  y,
-                                              }
-                                            : {}),
-                                        ...(areaMovement && !positionChange
-                                            ? {
-                                                  x:
-                                                      currentTable.x +
-                                                      areaMovement.deltaX,
-                                                  y:
-                                                      currentTable.y +
-                                                      areaMovement.deltaY,
-                                              }
-                                            : {}),
-                                        ...(sizeChange
-                                            ? {
-                                                  width:
-                                                      sizeChange.dimensions
-                                                          ?.width ??
-                                                      currentTable.width,
-                                              }
-                                            : {}),
-                                    };
-                                }
-                                return currentTable;
-                            })
-                            .filter(
-                                (table) =>
-                                    !removeChanges.some(
-                                        (change) => change.id === table.id
-                                    )
-                            );
-
-                        return updatedTables;
-                    },
-                    {
-                        updateHistory:
-                            positionChanges.length > 0 ||
-                            removeChanges.length > 0 ||
-                            sizeChanges.length > 0,
-                    }
-                );
-            }
-
-            updateOverlappingGraphOnChangesDebounced({
-                positionChanges,
-                sizeChanges,
-            });
-
-            if (
-                areaPositionChanges.length > 0 ||
-                areaRemoveChanges.length > 0 ||
-                areaSizeChanges.length > 0
-            ) {
-                const areasUpdates: Record<string, Partial<Area>> = {};
-                // Handle area position changes (child tables already moved above)
-                areaPositionChanges.forEach((change) => {
-                    if (change.type === 'position' && change.position) {
-                        areasUpdates[change.id] = {
-                            ...areasUpdates[change.id],
-                            x: change.position.x,
-                            y: change.position.y,
-                        };
-                    }
-                });
-
-                // Handle area size changes
-                areaSizeChanges.forEach((change) => {
-                    if (change.type === 'dimensions' && change.dimensions) {
-                        areasUpdates[change.id] = {
-                            ...areasUpdates[change.id],
-                            width: change.dimensions.width,
-                            height: change.dimensions.height,
-                        };
-                    }
-                });
-
-                // Handle area removal (child tables parentAreaId already cleared above)
-                areaRemoveChanges.forEach((change) => {
-                    removeArea(change.id);
-                    delete areasUpdates[change.id];
-                });
-
-                // Apply area updates to storage
-                if (Object.keys(areasUpdates).length > 0) {
-                    for (const [id, updates] of Object.entries(areasUpdates)) {
-                        updateArea(id, updates);
-                    }
-                }
-            }
-
-            // Handle note changes
-            if (
-                notePositionChanges.length > 0 ||
-                noteRemoveChanges.length > 0 ||
-                noteSizeChanges.length > 0
-            ) {
-                const notesUpdates: Record<string, Partial<Note>> = {};
-                // Handle note position changes
-                notePositionChanges.forEach((change) => {
-                    if (change.type === 'position' && change.position) {
-                        notesUpdates[change.id] = {
-                            ...notesUpdates[change.id],
-                            x: change.position.x,
-                            y: change.position.y,
-                        };
-                    }
-                });
-
-                // Handle note size changes
-                noteSizeChanges.forEach((change) => {
-                    if (change.type === 'dimensions' && change.dimensions) {
-                        notesUpdates[change.id] = {
-                            ...notesUpdates[change.id],
-                            width: change.dimensions.width,
-                            height: change.dimensions.height,
-                        };
-                    }
-                });
-
-                // Handle note removal
-                noteRemoveChanges.forEach((change) => {
-                    removeNote(change.id);
-                    delete notesUpdates[change.id];
-                });
-
-                // Apply note updates to storage
-                if (Object.keys(notesUpdates).length > 0) {
-                    for (const [id, updates] of Object.entries(notesUpdates)) {
-                        updateNote(id, updates);
-                    }
-                }
-            }
-
-            return onNodesChange(changesToApply);
-        },
-        [
-            onNodesChange,
-            updateTablesState,
-            updateOverlappingGraphOnChangesDebounced,
-            findRelevantNodesChanges,
-            updateArea,
-            removeArea,
-            updateNote,
-            removeNote,
-            tables,
-            areas,
-            getNode,
-            readonly,
-        ]
-    );
     useEffect(() => {
-        if (!LiveNodeChanges) return;
-        console.log(LiveNodeChanges);
-        if (LiveNodeChanges.length <= 0) return;
-
-        onNodesChangeHandlerLive(LiveNodeChanges);
-        // onNodesChange(LiveNodeChanges);
-        // setNodes(LiveNodeChanges);
-        ClearLiveNodeChanges();
-    }, [LiveNodeChanges, ClearLiveNodeChanges, onNodesChangeHandlerLive]);
+        const currentCursorNode = nodes.filter(
+            (item) =>
+                item.id === cursorNode.id &&
+                item.position !== CursorPos &&
+                item.type === 'cursor'
+        );
+        if (currentCursorNode.length > 0) {
+            onNodesChangeHandler([
+                { id: cursorNode.id, type: 'position', position: CursorPos },
+            ]);
+        }
+    }, [CursorPos, onNodesChangeHandler, cursorNode.id, nodes]);
 
     const eventConsumer = useCallback(
         (event: ChartDBEvent) => {
@@ -1813,6 +1507,12 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const rafIdRef = useRef<number>();
     const handleMouseMove = useCallback(
         (event: React.MouseEvent) => {
+            //This is for mousepos syncing
+            const mousePos = screenToFlowPosition({
+                x: event.clientX,
+                y: event.clientY,
+            });
+            onMouseMove(mousePos);
             if (tempFloatingEdge) {
                 // Throttle using requestAnimationFrame
                 if (rafIdRef.current) {
@@ -1829,7 +1529,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 });
             }
         },
-        [tempFloatingEdge, screenToFlowPosition]
+        [tempFloatingEdge, screenToFlowPosition, onMouseMove]
     );
 
     // Cleanup RAF on unmount
@@ -1872,7 +1572,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         if (!tempFloatingEdge || !cursorPosition) {
             return nodes;
         }
-
         const tempNode: TempCursorNodeType = {
             id: TEMP_CURSOR_NODE_ID,
             type: 'temp-cursor',
@@ -1881,7 +1580,6 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
             draggable: false,
             selectable: false,
         };
-
         return [...nodes, tempNode];
     }, [nodes, tempFloatingEdge, cursorPosition]);
 
@@ -2124,6 +1822,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                             </Button>
                         </Controls>
                     ) : null}
+
                     {isLostInCanvas ? (
                         <Controls
                             position={

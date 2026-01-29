@@ -51,10 +51,12 @@ export enum WebSocketMessageReqType {
     EDGE_UPDATE = 'EDGE_UPDATE',
     NODE_UPDATE = 'NODE_UPDATE',
     CURSOR_MOVE = 'CURSOR_MOVE',
+    NEW_PLAYER = 'NEW_PLAYER',
     DIAGRAM_BROADCAST = 'DIAGRAM_BROADCAST',
     GREET = 'GREET',
     DIAGRAM_NOT_EXIST = 'DIAGRAM_NOT_EXIST',
     DIAGRAM_CREATE = 'DIAGRAM_CREATE',
+    NODE_SYNC = 'NODE_SYNC',
 }
 const useSyncWithServer = () => {
     const { diagramId } = useParams<{ diagramId: string }>();
@@ -68,15 +70,13 @@ const useSyncWithServer = () => {
     const [LiveEdgeChanges, setLiveEdgeChanges] = useState<
         EdgeChange<EdgeType> | undefined
     >();
-    // const location = useLocation();
-    // const ws_url = `${location?.protocol === 'https' ? 'wss' : 'ws'}://${location.hostname}${location.port ? ':' + location.port : ''}`;
-    const ws_url = 'wss://chartdb-backend.onrender.com';
-    // const [sync, setSync] = useState<boolean>(false);
-    // const ws_url = 'ws://localhost:8080';
+
+    const [sync, setSync] = useState<boolean>(false);
+    const ws_url = 'ws://localhost:8080';
     // Track if the socket is actually ready to receive data
     const [isReady, setIsReady] = useState(false);
     const [DiagramNotExist, setDiagramNotExist] = useState(false);
-    const [liveDiagramData, setLiveDiagramData] = useState<Diagram | undefined>(
+    const [LiveDiagramData, setLiveDiagramData] = useState<Diagram | undefined>(
         undefined
     );
     const currentDiagramData = useRef<Diagram>();
@@ -101,6 +101,7 @@ const useSyncWithServer = () => {
         };
         const onClose = () => {
             setIsReady(false);
+            setSync(false);
             // Optional: Add a delay before reconnecting to avoid infinite loops
             setTimeout(() => (wsc.current = new WebSocket(ws_url)), 3000);
         };
@@ -142,14 +143,8 @@ const useSyncWithServer = () => {
                         ).getTime();
                         if (payloadTime > localTime) {
                             console.log(payloadTime, localTime);
-                            deleteDiagram(payload.id).then(() => {
-                                addDiagram({ diagram: payload });
-                            });
                             setLiveDiagramData(payload);
-                            // updateDiagram({
-                            //     id: payload.id,
-                            //     attributes: payload,
-                            // });
+                            setSync(true);
                         }
                     } else if (
                         messageJson.type ===
@@ -178,44 +173,24 @@ const useSyncWithServer = () => {
             socket.removeEventListener('message', onMessage);
             socket.close();
         };
-    }, [addDiagram, deleteDiagram, ws_url, liveDiagramData]);
+    }, [addDiagram, deleteDiagram, ws_url, LiveDiagramData]);
 
     // 2. Sync Logic
-    useEffect(
-        () => {
-            if (!localDiagramData || !isReady || !diagramId) return;
-            currentDiagramData.current = localDiagramData;
-            const jsonDataString = diagramToJSONOutputWs(localDiagramData);
-            const json = JSON.parse(jsonDataString) as Diagram;
-            const newJson: Diagram = { ...json, id: diagramId };
-            SendMessage(
-                {
-                    type: WebSocketMessageReqType.DIAGRAM_CHANGES,
-                    id: diagramId,
-                    payload: newJson,
-                },
-                wsc.current
-            );
-        },
-        // else if (DiagramNotExist) {
-        //     SendMessage(
-        //         {
-        //             type: WebSocketMessageReqType.DIAGRAM_CREATE,
-        //             payload: newJson,
-        //         },
-        //         wsc.current
-        //     );
-        // } else {
-        //     SendMessage(
-        //         {
-        //             type: WebSocketMessageReqType.GREET,
-        //             diagramId,
-        //         },
-        //         wsc.current
-        //     );
-        // }
-        [localDiagramData, isReady, diagramId, wsc, DiagramNotExist]
-    ); // Only sync when both data AND socket are ready
+    useEffect(() => {
+        if (!localDiagramData || !isReady || !diagramId) return;
+        currentDiagramData.current = localDiagramData;
+        const jsonDataString = diagramToJSONOutputWs(localDiagramData);
+        const json = JSON.parse(jsonDataString) as Diagram;
+        const newJson: Diagram = { ...json, id: diagramId };
+        SendMessage(
+            {
+                type: WebSocketMessageReqType.DIAGRAM_CHANGES,
+                id: diagramId,
+                payload: newJson,
+            },
+            wsc.current
+        );
+    }, [localDiagramData, isReady, diagramId, wsc, DiagramNotExist]); // Only sync when both data AND socket are ready
 
     const onNodeChangeSync = (changes: NodeChange<NodeType>[]) => {
         if (!wsc.current) return;
@@ -244,13 +219,14 @@ const useSyncWithServer = () => {
     };
 
     return {
-        liveDiagramData,
+        LiveDiagramData,
         onNodeChangeSync,
         onEdgeChangeSync,
         LiveNodeChanges,
         LiveEdgeChanges,
         ClearLiveNodeChanges,
         ClearLiveEdgeChanges,
+        sync,
     };
 };
 export default useSyncWithServer;
