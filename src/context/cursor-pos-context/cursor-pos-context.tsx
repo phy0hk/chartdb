@@ -1,14 +1,10 @@
 import { type XYPosition } from '@xyflow/react';
-import { createContext } from 'react';
+import { createContext, type RefObject } from 'react';
 
 export interface CursorContextType {
-    CursorPos: XYPosition;
-    onMouseMove: (e: XYPosition) => void;
-    cursorNodeId?: string;
+    onMouseMove: (e: XYPosition, wsc: RefObject<WebSocket | undefined>) => void;
 }
 const CursorPositionContext = createContext<CursorContextType>({
-    CursorPos: { x: 0, y: 0 },
     onMouseMove: () => {},
-    cursorNodeId: 'cursor-0',
 });
 export default CursorPositionContext;

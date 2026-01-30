@@ -27,6 +27,7 @@ import { DiffProvider } from '@/context/diff-context/diff-provider';
 import { TopNavbarMock } from './top-navbar/top-navbar-mock';
 import { DiagramFilterProvider } from '@/context/diagram-filter-context/diagram-filter-provider';
 import CursorPositionProvidor from '@/context/cursor-pos-context/cursor-pos-provider';
+import ServerSyncProvider from '@/context/server-sync-context/server-sync-provider';
 
 const OPEN_STAR_US_AFTER_SECONDS = 30;
 const SHOW_STAR_US_AGAIN_AFTER_DAYS = 1;
@@ -124,21 +125,23 @@ export const EditorPage: React.FC = () => (
                                     <ChartDBProvider>
                                         <DiagramFilterProvider>
                                             <HistoryProvider>
-                                                <CursorPositionProvidor>
-                                                    <ReactFlowProvider>
-                                                        <CanvasProvider>
-                                                            <ExportImageProvider>
-                                                                <AlertProvider>
-                                                                    <DialogProvider>
-                                                                        <KeyboardShortcutsProvider>
-                                                                            <EditorPageComponent />
-                                                                        </KeyboardShortcutsProvider>
-                                                                    </DialogProvider>
-                                                                </AlertProvider>
-                                                            </ExportImageProvider>
-                                                        </CanvasProvider>
-                                                    </ReactFlowProvider>
-                                                </CursorPositionProvidor>
+                                                <ServerSyncProvider>
+                                                    <CursorPositionProvidor>
+                                                        <ReactFlowProvider>
+                                                            <CanvasProvider>
+                                                                <ExportImageProvider>
+                                                                    <AlertProvider>
+                                                                        <DialogProvider>
+                                                                            <KeyboardShortcutsProvider>
+                                                                                <EditorPageComponent />
+                                                                            </KeyboardShortcutsProvider>
+                                                                        </DialogProvider>
+                                                                    </AlertProvider>
+                                                                </ExportImageProvider>
+                                                            </CanvasProvider>
+                                                        </ReactFlowProvider>
+                                                    </CursorPositionProvidor>
+                                                </ServerSyncProvider>
                                             </HistoryProvider>
                                         </DiagramFilterProvider>
                                     </ChartDBProvider>
