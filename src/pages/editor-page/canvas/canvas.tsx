@@ -124,6 +124,7 @@ import { useClickAway } from 'react-use';
 import useSyncWithServer from '@/hooks/use-syncwithserver';
 import { useCursorPos } from '@/hooks/use-cursor-pos';
 import { CursorNode, type CursorNodeType } from './cursor-node/cursor-node';
+import useServerSync from '@/hooks/use-server-sync';
 
 const HIGHLIGHTED_EDGE_Z_INDEX = 1;
 const DEFAULT_EDGE_Z_INDEX = 0;
@@ -283,6 +284,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const { toast } = useToast();
     const { t } = useTranslation();
     const { isLostInCanvas } = useIsLostInCanvas();
+    const { wsc, initWebSocket, Cursors } = useServerSync();
     const {
         tables,
         areas,
@@ -341,18 +343,19 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         },
         [checkIfNewTable]
     );
-
+    useEffect(() => {
+        // console.log(Cursors);
+    }, [Cursors]);
     const [isInitialLoadingNodes, setIsInitialLoadingNodes] = useState(true);
-
-    const { onMouseMove, CursorPos } = useCursorPos();
-    const cursorNode: CursorNodeType = {
-        id: 'cursor-0',
-        type: 'cursor',
-        position: { x: 0, y: 0 },
-        data: {},
-        draggable: false,
-        selectable: false,
-    };
+    const { onMouseMove } = useCursorPos();
+    // const cursorNode: CursorNodeType = {
+    //     id: 'cursor-0',
+    //     type: 'cursor',
+    //     position: { x: 0, y: 0 },
+    //     data: {},
+    //     draggable: false,
+    //     selectable: false,
+    // };
     const [nodes, setNodes, onNodesChange] = useNodesState<NodeType>([
         ...initialTables.map((table) =>
             tableToTableNode(table, {
@@ -364,7 +367,17 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 isRelationshipCreatingTarget: false,
             })
         ),
-        cursorNode,
+        ...Cursors.map((item) => {
+            const cursorNode: CursorNodeType = {
+                id: item.id,
+                type: 'cursor',
+                position: item.position,
+                data: {},
+                draggable: false,
+                selectable: false,
+            };
+            return cursorNode;
+        }),
     ]);
 
     const [edges, setEdges, onEdgesChange] =
@@ -415,7 +428,10 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 });
             }, 500)();
         }
-    }, [isInitialLoadingNodes, fitView]);
+        if (!wsc.current) {
+            initWebSocket();
+        }
+    }, [isInitialLoadingNodes, fitView, initWebSocket, wsc]);
 
     useEffect(() => {
         const targetIndexes: Record<string, number> = relationships.reduce(
@@ -995,7 +1011,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
     const onNodesChangeHandler: OnNodesChange<NodeType> = useCallback(
         (changes) => {
             let changesToApply = changes;
-            // if (sync) return;
+
             if (readonly) {
                 changesToApply = changesToApply.filter(
                     (change) => change.type !== 'remove'
@@ -1302,19 +1318,87 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         ]
     );
 
+    // useEffect(() => {
+    //     Cursors.forEach((item) => {
+    //         const currentCursorNode = nodes.find(
+    //             (cursor) => item.id === cursor.id
+    //         );
+    //         if (!currentCursorNode) {
+    //             setNodes((prev) => [
+    //                 ...prev,
+    //                 {
+    //                     id: item.id,
+    //                     type: 'cursor',
+    //                     position: item.position,
+    //                     data: {},
+    //                     focusable: false,
+    //                     draggable: false,
+    //                     selectable: false,
+    //                     dragging: false,
+    //                     // hidden: true,
+    //                 },
+    //             ]);
+    //         } else {
+    //             onNodesChangeHandler([
+    //                 {
+    //                     id: item.id,
+    //                     type: 'position',
+    //                     position: item.position,
+    //                 },
+    //             ]);
+    //         }
+    //     });
     useEffect(() => {
-        const currentCursorNode = nodes.filter(
-            (item) =>
-                item.id === cursorNode.id &&
-                item.position !== CursorPos &&
-                item.type === 'cursor'
-        );
-        if (currentCursorNode.length > 0) {
-            onNodesChangeHandler([
-                { id: cursorNode.id, type: 'position', position: CursorPos },
-            ]);
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const newNodes: NodeType[] = [];
+        const changes: any[] = [];
+
+        Cursors.forEach((item) => {
+            const currentCursorNode = nodes.find((n) => n.id === item.id);
+
+            if (!currentCursorNode) {
+                newNodes.push({
+                    id: item.id,
+                    type: 'cursor',
+                    position: item.position,
+                    data: {},
+                    focusable: false,
+                    draggable: false,
+                    selectable: false,
+                    dragging: false,
+                });
+            } else {
+                changes.push({
+                    id: item.id,
+                    type: 'position',
+                    position: item.position,
+                });
+            }
+        });
+
+        // Bulk add new nodes
+        if (newNodes.length > 0) {
+            setNodes((prev) => [...prev, ...newNodes]);
         }
-    }, [CursorPos, onNodesChangeHandler, cursorNode.id, nodes]);
+
+        // Bulk update existing nodes
+        if (changes.length > 0) {
+            onNodesChangeHandler(changes);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [Cursors]); // Remove 'nodes' from dependencies if possible to avoid infinite loops
+    // const currentCursorNode = nodes.filter(
+    //     (item) =>
+    //         item.id === cursorNode.id &&
+    //         item.position !== CursorPos &&
+    //         item.type === 'cursor'
+    // );
+    // if (currentCursorNode.length > 0) {
+    //     onNodesChangeHandler([
+    //         { id: cursorNode.id, type: 'position', position: CursorPos },
+    //     ]);
+    // }
+    // }, [Cursors]);
 
     const eventConsumer = useCallback(
         (event: ChartDBEvent) => {
@@ -1512,7 +1596,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 x: event.clientX,
                 y: event.clientY,
             });
-            onMouseMove(mousePos);
+            onMouseMove(mousePos, wsc);
             if (tempFloatingEdge) {
                 // Throttle using requestAnimationFrame
                 if (rafIdRef.current) {
@@ -1529,7 +1613,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
                 });
             }
         },
-        [tempFloatingEdge, screenToFlowPosition, onMouseMove]
+        [tempFloatingEdge, screenToFlowPosition, onMouseMove, wsc]
     );
 
     // Cleanup RAF on unmount

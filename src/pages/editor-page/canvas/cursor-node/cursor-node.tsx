@@ -1,6 +1,6 @@
 import type { Node, NodeProps } from '@xyflow/react';
 import React from 'react';
-export type CursorNodeType = Node<{}, 'cursor'>;
+export type CursorNodeType = Node<{ lastUpdated?: number }, 'cursor'>;
 
 export const CursorNode: React.FC<NodeProps<CursorNodeType>> = React.memo(
     () => {
