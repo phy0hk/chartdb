@@ -10,9 +10,16 @@ import { useParams } from 'react-router-dom';
 import { useStorage } from '@/hooks/use-storage';
 import { type CursorNodeType } from '@/pages/editor-page/canvas/cursor-node/cursor-node';
 import { type XYPosition } from '@xyflow/react';
+import { useLocation } from 'react-use';
 const ServerSyncProvider = ({ children }: { children: React.ReactNode }) => {
     const wsc = useRef<WebSocket>();
-    const ws_url = 'ws://localhost:8080';
+    const location = useLocation();
+    const ws_url =
+        (location.protocol === 'https:' ? 'wss://' : 'ws://') +
+        location.hostname +
+        ':' +
+        location.port;
+    console.log(ws_url);
     const { deleteDiagram, addDiagram } = useStorage();
     const { diagramId } = useParams<{ diagramId: string }>();
 

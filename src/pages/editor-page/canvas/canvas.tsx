@@ -121,7 +121,7 @@ import { filterTable } from '@/lib/domain/diagram-filter/filter';
 import { defaultSchemas } from '@/lib/data/default-schemas';
 import { useDiff } from '@/context/diff-context/use-diff';
 import { useClickAway } from 'react-use';
-import useSyncWithServer from '@/hooks/use-syncwithserver';
+// import useSyncWithServer from '@/hooks/use-syncwithserver';
 import { useCursorPos } from '@/hooks/use-cursor-pos';
 import { CursorNode, type CursorNodeType } from './cursor-node/cursor-node';
 import useServerSync from '@/hooks/use-server-sync';
@@ -307,7 +307,7 @@ export const Canvas: React.FC<CanvasProps> = ({ initialTables }) => {
         highlightedCustomType,
         highlightCustomTypeId,
     } = useChartDB();
-    useSyncWithServer();
+    // useSyncWithServer();
     const { showSidePanel } = useLayout();
     const { effectiveTheme } = useTheme();
     const { scrollAction, showDBViews, showMiniMapOnCanvas } = useLocalConfig();
